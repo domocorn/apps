@@ -6,7 +6,7 @@ categories:
 - productivity
 changelog_url: https://github.com/frappe/erpnext/releases
 date_added: '2026-10-18'
-description: ERPNext business management with Frappe, inventory, invoicing and support.
+description: ERPNext with upstream Frappe Docker services. Manual site setup and upgrades.
 home: https://erpnext.com
 host_mounts: []
 icon: ''
@@ -15,7 +15,7 @@ keywords:
 - inventory
 - invoicing
 lib_version: 2.3.17
-lib_version_hash: 607c7cf938659b59650fd6541f5e9fb1681421d04863b108a2e056ae4dad7b1c
+lib_version_hash: b02a8040f1971a601638300b595bbd5b72f0664ba13fdf7759c212867caeed24
 maintainers:
 - email: dev@truenas.com
   name: truenas
@@ -27,7 +27,7 @@ run_as_context:
   group_name: Host group is [unknown (1000)]
   uid: 1000
   user_name: Host user is [unknown (1000)]
-- description: Container [bootstrap] runs as non-root user and group.
+- description: Container [configurator] runs as non-root user and group.
   gid: 1000
   group_name: Host group is [unknown (1000)]
   uid: 1000
@@ -38,11 +38,6 @@ run_as_context:
   uid: 999
   user_name: Host user is [netdata]
 - description: Container [frontend] runs as non-root user and group.
-  gid: 1000
-  group_name: Host group is [unknown (1000)]
-  uid: 1000
-  user_name: Host user is [unknown (1000)]
-- description: Container [initializer] runs as non-root user and group.
   gid: 1000
   group_name: Host group is [unknown (1000)]
   uid: 1000
@@ -72,11 +67,6 @@ run_as_context:
   group_name: Host group is [unknown (1000)]
   uid: 1000
   user_name: Host user is [unknown (1000)]
-- description: Container [upgrade-backup] runs as non-root user and group.
-  gid: 1000
-  group_name: Host group is [unknown (1000)]
-  uid: 1000
-  user_name: Host user is [unknown (1000)]
 - description: Container [websocket] runs as non-root user and group.
   gid: 1000
   group_name: Host group is [unknown (1000)]
@@ -90,4 +80,4 @@ sources:
 - https://github.com/frappe/frappe_docker
 title: ERPNext
 train: community
-version: 1.1.0
+version: 2.0.0

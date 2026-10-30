@@ -1,7 +1,3 @@
-{% from 'macros/bootstrap.py' import bootstrap_script %}
-{% from 'macros/initialize.py' import initialize_script %}
-{% from 'macros/health.py' import health_script %}
-{% from 'macros/runtime.py' import runtime_script %}
 {% set tpl = ix_lib.base.render.Render(values) %}
 {% set perms = tpl.deps.perms(values.consts.perms_container_name) %}
 {% set db = tpl.deps.mariadb(values.consts.db_container_name, 'mariadb_image', {
@@ -31,29 +27,30 @@
   {% do perms.add_or_skip_action(key, values.storage[key], {'uid': 1000, 'gid': 1000, 'mode': 'check'}) %}
 {% endfor %}
 
-{% set boot = tpl.add_container(values.consts.bootstrap_container_name, 'image') %}
-{% do boot.set_user(1000, 1000) %}
-{% do boot.restart.set_policy('no') %}
-{% do boot.healthcheck.disable() %}
-{% do boot.set_entrypoint(['/home/frappe/frappe-bench/env/bin/python', '/catalog/bootstrap.py']) %}
-{% do boot.configs.add('catalog_bootstrap', bootstrap_script(), '/catalog/bootstrap.py', '0444') %}
-{% do boot.environment.add_env('CATALOG_IMAGE', values.images.image.repository ~ ':' ~ values.images.image.tag) %}
-{% do boot.add_storage('/persistent/sites', values.storage.sites) %}
-
-{% set init = tpl.add_container(values.consts.initializer_container_name, 'image') %}
-{% do init.set_user(1000, 1000) %}
-{% do init.restart.set_policy('no') %}
-{% do init.healthcheck.disable() %}
-{% do init.set_entrypoint(['/home/frappe/frappe-bench/env/bin/python', '/catalog/initialize.py']) %}
-{% do init.configs.add('catalog_initialize', initialize_script(), '/catalog/initialize.py', '0444') %}
-{% do init.add_storage(values.consts.sites_path, values.storage.sites) %}
-{% do init.add_storage(values.consts.logs_path, values.storage.logs) %}
-{% do init.environment.add_env('SITE_NAME', values.erpnext.site_name) %}
-{% do init.environment.add_env('ADMIN_PASSWORD', values.erpnext.admin_password) %}
-{% do init.environment.add_env('DB_ROOT_PASSWORD', values.erpnext.db_password) %}
-{% do init.depends.add_dependency(values.consts.bootstrap_container_name, 'service_completed_successfully') %}
+{# Connection settings follow frappe/frappe_docker compose.yaml. #}
+{% set configurator = tpl.add_container(values.consts.configurator_container_name, 'image') %}
+{% do configurator.set_user(1000, 1000) %}
+{% do configurator.restart.set_policy('no') %}
+{% do configurator.healthcheck.disable() %}
+{% do configurator.set_entrypoint(['bash', '-ec']) %}
+{% set configure %}
+ls -1 apps > sites/apps.txt
+bench set-config -g db_host "$DB_HOST"
+bench set-config -gp db_port "$DB_PORT"
+bench set-config -g redis_cache "redis://$REDIS_CACHE"
+bench set-config -g redis_queue "redis://$REDIS_QUEUE"
+bench set-config -g redis_socketio "redis://$REDIS_QUEUE"
+bench set-config -gp socketio_port "$SOCKETIO_PORT"
+bench set-config -g chromium_path /usr/lib/chromium/chromium-headless-shell
+{% endset %}
+{% do configurator.set_command([configure]) %}
+{% for key, value in {'DB_HOST':'db', 'DB_PORT':'3306', 'REDIS_CACHE':'redis-cache:6379', 'REDIS_QUEUE':'redis-queue:6379', 'SOCKETIO_PORT':'9000'}.items() %}
+  {% do configurator.environment.add_env(key, value) %}
+{% endfor %}
+{% do configurator.add_storage(values.consts.sites_path, values.storage.sites) %}
+{% do configurator.add_storage(values.consts.logs_path, values.storage.logs) %}
 {% for name in [values.consts.db_container_name, values.consts.redis_cache_container_name, values.consts.redis_queue_container_name] %}
-  {% do init.depends.add_dependency(name, 'service_healthy') %}
+  {% do configurator.depends.add_dependency(name, 'service_healthy') %}
 {% endfor %}
 
 {% set runtime = {} %}
@@ -63,22 +60,14 @@
   {% do c.set_user(1000, 1000) %}
   {% do c.add_storage(values.consts.sites_path, values.storage.sites) %}
   {% do c.add_storage(values.consts.logs_path, values.storage.logs) %}
-  {% do c.depends.add_dependency(values.consts.initializer_container_name, 'service_completed_successfully') %}
-  {% do c.environment.add_env('SITE_NAME', values.erpnext.site_name) %}
-  {% do c.environment.add_env('CATALOG_IMAGE', values.images.image.repository ~ ':' ~ values.images.image.tag) %}
-  {% do c.configs.add('catalog_runtime', runtime_script(), '/catalog/runtime.py', '0444') %}
-  {% do c.set_entrypoint(['/home/frappe/frappe-bench/env/bin/python', '/catalog/runtime.py']) %}
-  {% do c.configs.add('catalog_health', health_script(), '/catalog/health.py', '0444') %}
-  {% do c.healthcheck.set_custom_test(['CMD', '/home/frappe/frappe-bench/env/bin/python', '/catalog/health.py', name]) %}
-  {% do c.healthcheck.set_interval(30) %}
-  {% do c.healthcheck.set_timeout(15) %}
-  {% do c.healthcheck.set_start_period(120) %}
+  {% do c.depends.add_dependency(values.consts.configurator_container_name, 'service_completed_successfully') %}
+  {% if name != values.consts.frontend_container_name %}
+    {% do c.healthcheck.disable() %}
+  {% endif %}
 {% endfor %}
 {% do runtime[values.consts.backend_container_name].set_command(['start.sh']) %}
 {% do runtime[values.consts.queue_short_container_name].set_command(['bench', 'worker', '--queue', 'short,default']) %}
-{% do runtime[values.consts.queue_long_container_name].set_command(['bench', 'worker', '--queue', 'long']) %}
-{% do runtime[values.consts.queue_short_container_name].set_grace_period(120) %}
-{% do runtime[values.consts.queue_long_container_name].set_grace_period(120) %}
+{% do runtime[values.consts.queue_long_container_name].set_command(['bench', 'worker', '--queue', 'long,default,short']) %}
 {% do runtime[values.consts.scheduler_container_name].set_command(['bench', 'schedule']) %}
 {% do runtime[values.consts.websocket_container_name].set_command(['node', '/home/frappe/frappe-bench/apps/frappe/socketio.js']) %}
 {% set frontend = runtime[values.consts.frontend_container_name] %}
@@ -92,15 +81,14 @@
 {% for name in [values.consts.backend_container_name, values.consts.websocket_container_name] %}
   {% do frontend.depends.add_dependency(name, 'service_started') %}
 {% endfor %}
+{# Probe the listener before a site exists; HTTP 404 during manual setup is expected. #}
+{% do frontend.healthcheck.set_test('tcp', {'port': 8080}) %}
 {% if perms.has_actions() %}
   {% do perms.activate() %}
-  {% for c in [boot, db.container, queue] %}
+  {% for c in [configurator, db.container, queue] %}
     {% do c.depends.add_dependency(values.consts.perms_container_name, 'service_completed_successfully') %}
   {% endfor %}
 {% endif %}
 {% do tpl.portals.add(values.network.web_port) %}
-{% do tpl.notes.set_body('Development draft: fresh installations only. Log in as Administrator with the initial password. Image upgrades and existing-site imports are blocked pending catalog lifecycle integration. Per-container resource limits are not aggregate app limits.') %}
-{% if values.consts.native_lifecycle %}
-{% include 'macros/native-integration.yaml' %}
-{% endif %}
+{% do tpl.notes.set_body('Manual setup required: create the site from the backend shell with the upstream bench new-site command in the README. A 404 before site creation is expected. Backup, migration and restore are operator-managed upstream operations. Do not reuse storage from the former guarded prototype. Resource limits apply per container.') %}
 {{ tpl.render() | tojson }}

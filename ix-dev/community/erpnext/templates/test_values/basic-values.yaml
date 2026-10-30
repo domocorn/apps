@@ -1,6 +1,5 @@
 erpnext:
   site_name: erpnext.localhost
-  admin_password: test-only-admin-password
   db_password: test-only-database-password
 network:
   web_port:
